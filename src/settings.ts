@@ -15,29 +15,28 @@ export interface GitHubSyncSettings {
 }
 
 export const DEFAULT_IGNORE_PATTERNS = [
+	".DS_Store",
+	"Thumbs.db",
+	"desktop.ini",
+	".trash/",
 	".obsidian/workspace.json",
 	".obsidian/workspace-mobile.json",
 	".obsidian/cache/",
-	".obsidian/plugins/*/main.js.map",
-	".trash/",
-	".DS_Store",
-	"Thumbs.db",
 ].join("\n");
 
 export const DEFAULT_GITATTRIBUTES = [
-	"* text=auto",
+	"* text=auto eol=lf",
 	"*.md text eol=lf",
 	"*.canvas text eol=lf",
 	"*.json text eol=lf",
+	"*.css text eol=lf",
 	"*.png binary",
 	"*.jpg binary",
 	"*.jpeg binary",
 	"*.gif binary",
 	"*.webp binary",
 	"*.pdf binary",
-	"*.mp3 binary",
-	"*.mp4 binary",
-	"*.mov binary",
+	"*.zip binary",
 ].join("\n");
 
 export const DEFAULT_SETTINGS: GitHubSyncSettings = {

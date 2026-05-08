@@ -163,7 +163,7 @@ export class SettingsTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Write .gitignore")
-			.setDesc("Create .gitignore if it is missing. Existing different content is not overwritten.")
+			.setDesc("Write .gitignore to the vault root. Existing different content requires confirmation.")
 			.addButton((button) =>
 				button
 					.setButtonText("Write .gitignore")
@@ -212,7 +212,7 @@ export class SettingsTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Write .gitattributes")
-			.setDesc("Create .gitattributes if it is missing. Existing different content is not overwritten.")
+			.setDesc("Write .gitattributes to the vault root. May cause a one-time normalization diff.")
 			.addButton((button) =>
 				button
 					.setButtonText("Write .gitattributes")

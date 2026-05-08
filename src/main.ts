@@ -7,6 +7,7 @@ import { DEFAULT_SETTINGS, GitHubSyncSettings } from "./settings";
 import { SyncManager } from "./sync/SyncManager";
 import { ConnectionCheckResult, ConnectionTestModal } from "./ui/ConnectionTestModal";
 import { ConflictModal } from "./ui/ConflictModal";
+import { OverwriteFileModal } from "./ui/OverwriteFileModal";
 import { SettingsTab } from "./ui/SettingsTab";
 import { StatusBarController } from "./ui/StatusBarController";
 
@@ -208,20 +209,33 @@ export default class GitHubSyncPlugin extends Plugin {
 				return;
 			}
 
-			new Notice(`GitHub Sync: ${fileName} already exists and was not overwritten.`);
+			new OverwriteFileModal(this.app, {
+				fileName,
+				onConfirm: async () => {
+					await this.writeRootFileContent(fileName, filePath, normalizedContent);
+				},
+			}).open();
 		} catch (error) {
 			if (!this.isNodeError(error) || error.code !== "ENOENT") {
 				new Notice(`GitHub Sync: failed to read ${fileName}.`);
 				return;
 			}
 
-			try {
-				this.suppressGeneratedWriteEvent(fileName);
-				await fs.writeFile(filePath, normalizedContent, "utf8");
-				new Notice(`GitHub Sync: wrote ${fileName}.`);
-			} catch {
-				new Notice(`GitHub Sync: failed to write ${fileName}.`);
-			}
+			await this.writeRootFileContent(fileName, filePath, normalizedContent);
+		}
+	}
+
+	private async writeRootFileContent(
+		fileName: ".gitignore" | ".gitattributes",
+		filePath: string,
+		content: string,
+	): Promise<void> {
+		try {
+			this.suppressGeneratedWriteEvent(fileName);
+			await fs.writeFile(filePath, content, "utf8");
+			new Notice(`GitHub Sync: wrote ${fileName}.`);
+		} catch {
+			new Notice(`GitHub Sync: failed to write ${fileName}.`);
 		}
 	}
 
