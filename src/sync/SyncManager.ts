@@ -196,6 +196,13 @@ export class SyncManager {
 			return this.syncedResult("No local changes to commit after pull.", trigger);
 		}
 
+		if (trigger === "auto") {
+			return this.errorResult("Auto-sync found local changes. Run manual sync to review and commit them.", {
+				...changes,
+				exitCode: 1,
+			}, trigger);
+		}
+
 		this.emit({
 			state: "committing",
 			message: "Committing local changes.",

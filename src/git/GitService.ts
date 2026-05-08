@@ -93,7 +93,7 @@ export class GitService {
 	async fetch(remote: string): Promise<GitCommandResult> {
 		return this.runGit({
 			args: ["fetch", "--prune", remote],
-			commandLabel: `git fetch --prune ${remote}`,
+			commandLabel: `git fetch --prune ${redactSecrets(remote)}`,
 			timeoutMs: 300000,
 		});
 	}
@@ -101,7 +101,7 @@ export class GitService {
 	async pullRebaseAutostash(remote: string, branch: string): Promise<GitCommandResult> {
 		return this.runGit({
 			args: ["pull", "--rebase", "--autostash", remote, branch],
-			commandLabel: `git pull --rebase --autostash ${remote} ${branch}`,
+			commandLabel: `git pull --rebase --autostash ${redactSecrets(remote)} ${branch}`,
 			timeoutMs: 300000,
 		});
 	}
@@ -123,7 +123,7 @@ export class GitService {
 	async push(remote: string, branch: string): Promise<GitCommandResult> {
 		return this.runGit({
 			args: ["push", remote, branch],
-			commandLabel: `git push ${remote} ${branch}`,
+			commandLabel: `git push ${redactSecrets(remote)} ${branch}`,
 			timeoutMs: 300000,
 		});
 	}

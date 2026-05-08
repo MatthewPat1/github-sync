@@ -313,6 +313,10 @@ export default class GitHubSyncPlugin extends Plugin {
 			return;
 		}
 
+		if (this.isOwnPluginPath(file.path) || (oldPath !== undefined && this.isOwnPluginPath(oldPath))) {
+			return;
+		}
+
 		this.scheduleAutoSync();
 	}
 
@@ -357,6 +361,11 @@ export default class GitHubSyncPlugin extends Plugin {
 
 	private isPluginGeneratedPath(filePath: string): boolean {
 		return this.pluginGeneratedWritePaths.has(filePath);
+	}
+
+	private isOwnPluginPath(filePath: string): boolean {
+		return filePath === `.obsidian/plugins/${this.manifest.id}` ||
+			filePath.startsWith(`.obsidian/plugins/${this.manifest.id}/`);
 	}
 
 	private async testLocalUserConfig(): Promise<ConnectionCheckResult[]> {
