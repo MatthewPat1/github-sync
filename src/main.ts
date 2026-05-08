@@ -1,6 +1,6 @@
 import { promises as fs } from "fs";
 import path from "path";
-import { Notice, Plugin } from "obsidian";
+import { Notice, Plugin, TAbstractFile } from "obsidian";
 import { GitBinaryDetector } from "./git/GitBinaryDetector";
 import { GitService } from "./git/GitService";
 import { DEFAULT_SETTINGS, GitHubSyncSettings } from "./settings";
@@ -13,6 +13,10 @@ export default class GitHubSyncPlugin extends Plugin {
 	gitService: GitService;
 	syncManager: SyncManager;
 	statusBar: StatusBarController;
+	private autoSyncTimeoutId: number | null = null;
+	private startupPullTimeoutId: number | null = null;
+	private readonly pluginGeneratedWritePaths = new Set<string>();
+	private readonly pluginGeneratedWriteTimeouts = new Set<number>();
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -81,16 +85,24 @@ export default class GitHubSyncPlugin extends Plugin {
 		});
 
 		this.addSettingTab(new SettingsTab(this.app, this));
+		this.registerVaultFileEvents();
 
 		if (this.settings.startupPullEnabled) {
-			const startupPullTimeout = window.setTimeout(() => {
-				void this.syncManager.startupPull();
+			this.startupPullTimeoutId = window.setTimeout(() => {
+				void this.syncManager.pullOnly();
 			}, this.settings.startupPullDelaySeconds * 1000);
-			this.register(() => window.clearTimeout(startupPullTimeout));
+			this.register(() => this.clearStartupPullTimer());
 		}
 	}
 
 	onunload(): void {
+		this.clearAutoSyncTimer();
+		this.clearStartupPullTimer();
+		for (const timeoutId of this.pluginGeneratedWriteTimeouts) {
+			window.clearTimeout(timeoutId);
+		}
+		this.pluginGeneratedWriteTimeouts.clear();
+		this.pluginGeneratedWritePaths.clear();
 		this.statusBar?.unload();
 	}
 
@@ -105,6 +117,9 @@ export default class GitHubSyncPlugin extends Plugin {
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
 		this.statusBar?.refresh(this.settings);
+		if (!this.settings.autoSyncEnabled) {
+			this.clearAutoSyncTimer();
+		}
 	}
 
 	private async runPullOnly(): Promise<void> {
@@ -162,6 +177,7 @@ export default class GitHubSyncPlugin extends Plugin {
 			}
 
 			try {
+				this.suppressGeneratedWriteEvent(fileName);
 				await fs.writeFile(filePath, normalizedContent, "utf8");
 				new Notice(`GitHub Sync: wrote ${fileName}.`);
 			} catch {
@@ -178,7 +194,9 @@ export default class GitHubSyncPlugin extends Plugin {
 		this.register(
 			this.syncManager.on("synced", (event) => {
 				this.statusBar.showSynced();
-				new Notice(`GitHub Sync: ${event.message}`);
+				if (event.trigger !== "auto") {
+					new Notice(`GitHub Sync: ${event.message}`);
+				}
 			}),
 		);
 		this.register(
@@ -193,6 +211,84 @@ export default class GitHubSyncPlugin extends Plugin {
 				new Notice(`GitHub Sync: ${event.message}`);
 			}),
 		);
+	}
+
+	private registerVaultFileEvents(): void {
+		this.registerEvent(
+			this.app.vault.on("modify", (file) => {
+				this.handleVaultFileEvent(file);
+			}),
+		);
+		this.registerEvent(
+			this.app.vault.on("create", (file) => {
+				this.handleVaultFileEvent(file);
+			}),
+		);
+		this.registerEvent(
+			this.app.vault.on("delete", (file) => {
+				this.handleVaultFileEvent(file);
+			}),
+		);
+		this.registerEvent(
+			this.app.vault.on("rename", (file, oldPath) => {
+				this.handleVaultFileEvent(file, oldPath);
+			}),
+		);
+	}
+
+	private handleVaultFileEvent(file: TAbstractFile, oldPath?: string): void {
+		if (!this.settings.autoSyncEnabled) {
+			return;
+		}
+
+		if (this.isPluginGeneratedPath(file.path) || (oldPath !== undefined && this.isPluginGeneratedPath(oldPath))) {
+			return;
+		}
+
+		this.scheduleAutoSync();
+	}
+
+	private scheduleAutoSync(): void {
+		this.clearAutoSyncTimer();
+		this.autoSyncTimeoutId = window.setTimeout(() => {
+			this.autoSyncTimeoutId = null;
+			if (!this.settings.autoSyncEnabled) {
+				return;
+			}
+
+			void this.syncManager.fullSync("auto");
+		}, this.settings.idleTimeoutSeconds * 1000);
+	}
+
+	private clearAutoSyncTimer(): void {
+		if (this.autoSyncTimeoutId === null) {
+			return;
+		}
+
+		window.clearTimeout(this.autoSyncTimeoutId);
+		this.autoSyncTimeoutId = null;
+	}
+
+	private clearStartupPullTimer(): void {
+		if (this.startupPullTimeoutId === null) {
+			return;
+		}
+
+		window.clearTimeout(this.startupPullTimeoutId);
+		this.startupPullTimeoutId = null;
+	}
+
+	private suppressGeneratedWriteEvent(filePath: string): void {
+		this.pluginGeneratedWritePaths.add(filePath);
+		const timeoutId = window.setTimeout(() => {
+			this.pluginGeneratedWritePaths.delete(filePath);
+			this.pluginGeneratedWriteTimeouts.delete(timeoutId);
+		}, 2000);
+		this.pluginGeneratedWriteTimeouts.add(timeoutId);
+	}
+
+	private isPluginGeneratedPath(filePath: string): boolean {
+		return this.pluginGeneratedWritePaths.has(filePath);
 	}
 
 	private isNodeError(error: unknown): error is NodeJS.ErrnoException {

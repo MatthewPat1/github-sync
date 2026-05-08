@@ -98,7 +98,7 @@ export class SyncManager {
 			};
 		}
 
-		return this.fullSync("startup");
+		return this.pullOnly();
 	}
 
 	private async enqueueOrRun(operation: SyncOperation): Promise<SyncResult> {
