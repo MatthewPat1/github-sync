@@ -26,11 +26,11 @@ export class SyncManager {
 
 		this.isRunning = true;
 		try {
-			const status = await this.options.gitService.statusShort();
-			if (!status.ok) {
+			const status = await this.options.gitService.getStatusPorcelain();
+			if (status.exitCode !== 0) {
 				return {
 					ok: false,
-					message: status.message,
+					message: status.stderr || "The vault is not ready for git status checks.",
 				};
 			}
 
