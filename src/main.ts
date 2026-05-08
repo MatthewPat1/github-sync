@@ -6,6 +6,7 @@ import { GitService } from "./git/GitService";
 import { DEFAULT_SETTINGS, GitHubSyncSettings } from "./settings";
 import { SyncManager } from "./sync/SyncManager";
 import { ConnectionCheckResult, ConnectionTestModal } from "./ui/ConnectionTestModal";
+import { ConflictModal } from "./ui/ConflictModal";
 import { SettingsTab } from "./ui/SettingsTab";
 import { StatusBarController } from "./ui/StatusBarController";
 
@@ -241,6 +242,21 @@ export default class GitHubSyncPlugin extends Plugin {
 			this.syncManager.on("conflict", (event) => {
 				this.statusBar.showConflict();
 				new Notice(`GitHub Sync: ${event.message}`);
+				new ConflictModal(this.app, {
+					conflictedFiles: event.conflictedFiles ?? [],
+					rawResult: event.result,
+					vaultPath: this.gitService.getVaultRootPath(),
+					getUnresolvedFiles: async () => {
+						const result = await this.gitService.getUnmergedFiles();
+						return result.values;
+					},
+					retrySync: async () => {
+						const result = await this.syncManager.fullSync("manual");
+						if (result.state === "queued") {
+							new Notice("GitHub Sync: sync queued.");
+						}
+					},
+				}).open();
 			}),
 		);
 		this.register(
