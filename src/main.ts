@@ -5,6 +5,7 @@ import { GitBinaryDetector } from "./git/GitBinaryDetector";
 import { GitService } from "./git/GitService";
 import { DEFAULT_SETTINGS, GitHubSyncSettings } from "./settings";
 import { SyncManager } from "./sync/SyncManager";
+import { ConnectionCheckResult, ConnectionTestModal } from "./ui/ConnectionTestModal";
 import { SettingsTab } from "./ui/SettingsTab";
 import { StatusBarController } from "./ui/StatusBarController";
 
@@ -136,14 +137,51 @@ export default class GitHubSyncPlugin extends Plugin {
 		}
 	}
 
-	private async testConnection(): Promise<void> {
-		const result = await this.gitService.lsRemote(this.settings.remoteName);
-		if (result.exitCode === 0) {
-			new Notice("GitHub Sync: connection test succeeded.");
+	async testConnection(): Promise<void> {
+		const results: ConnectionCheckResult[] = [];
+
+		const gitVersion = await this.gitService.getGitVersion();
+		results.push({
+			label: "Git binary",
+			status: gitVersion.exitCode === 0 ? "pass" : "fail",
+			detail: gitVersion.exitCode === 0 ? gitVersion.stdout.trim() : this.getCommandFailureDetail(gitVersion),
+		});
+
+		const workTree = await this.gitService.isInsideWorkTree();
+		results.push({
+			label: "Inside git work tree",
+			status: workTree.exitCode === 0 && workTree.value ? "pass" : "fail",
+			detail: workTree.exitCode === 0 && workTree.value ? "Vault root is inside a git work tree." : this.getCommandFailureDetail(workTree),
+		});
+
+		const branch = await this.gitService.getCurrentBranch();
+		const branchName = branch.stdout.trim();
+		results.push({
+			label: "Current branch",
+			status: branch.exitCode === 0 && branchName === this.settings.branchName ? "pass" : "fail",
+			detail:
+				branch.exitCode === 0
+					? `Current branch: ${branchName || "<none>"}. Expected: ${this.settings.branchName}.`
+					: this.getCommandFailureDetail(branch),
+		});
+
+		const remote = await this.gitService.lsRemote(this.settings.remoteName);
+		results.push({
+			label: "Remote reachable",
+			status: remote.exitCode === 0 ? "pass" : "fail",
+			detail: remote.exitCode === 0 ? `Remote '${this.settings.remoteName}' is reachable.` : this.getCommandFailureDetail(remote),
+		});
+
+		const userConfigResults = await this.testLocalUserConfig();
+		results.push(...userConfigResults);
+
+		new ConnectionTestModal(this.app, results).open();
+		if (results.every((result) => result.status !== "fail")) {
+			new Notice("GitHub Sync: connection test passed.");
 			return;
 		}
 
-		new Notice(`GitHub Sync: connection test failed. ${result.stderr || result.stdout}`);
+		new Notice("GitHub Sync: connection test found issues.");
 	}
 
 	private async detectGitBinary(): Promise<void> {
@@ -158,7 +196,7 @@ export default class GitHubSyncPlugin extends Plugin {
 		new Notice(`GitHub Sync: using git at ${result.path}`);
 	}
 
-	private async writeRootFile(fileName: ".gitignore" | ".gitattributes", content: string): Promise<void> {
+	async writeRootFile(fileName: ".gitignore" | ".gitattributes", content: string): Promise<void> {
 		const filePath = path.join(this.gitService.getVaultRootPath(), fileName);
 		const normalizedContent = content.endsWith("\n") ? content : `${content}\n`;
 
@@ -289,6 +327,62 @@ export default class GitHubSyncPlugin extends Plugin {
 
 	private isPluginGeneratedPath(filePath: string): boolean {
 		return this.pluginGeneratedWritePaths.has(filePath);
+	}
+
+	private async testLocalUserConfig(): Promise<ConnectionCheckResult[]> {
+		const expectedName = this.settings.gitUserName.trim();
+		const expectedEmail = this.settings.gitUserEmail.trim();
+		if (expectedName.length === 0 && expectedEmail.length === 0) {
+			return [
+				{
+					label: "Local git user config",
+					status: "skip",
+					detail: "No git user name or email is configured in plugin settings.",
+				},
+			];
+		}
+
+		const results: ConnectionCheckResult[] = [];
+		if (expectedName.length > 0) {
+			const localName = await this.gitService.getLocalUserName();
+			const actualName = localName.stdout.trim();
+			results.push({
+				label: "Local git user.name",
+				status: localName.exitCode === 0 && actualName === expectedName ? "pass" : "fail",
+				detail:
+					localName.exitCode === 0
+						? `Configured: ${actualName || "<none>"}. Expected: ${expectedName}.`
+						: this.getCommandFailureDetail(localName),
+			});
+		}
+
+		if (expectedEmail.length > 0) {
+			const localEmail = await this.gitService.getLocalUserEmail();
+			const actualEmail = localEmail.stdout.trim();
+			results.push({
+				label: "Local git user.email",
+				status: localEmail.exitCode === 0 && actualEmail === expectedEmail ? "pass" : "fail",
+				detail:
+					localEmail.exitCode === 0
+						? `Configured: ${actualEmail || "<none>"}. Expected: ${expectedEmail}.`
+						: this.getCommandFailureDetail(localEmail),
+			});
+		}
+
+		return results;
+	}
+
+	private getCommandFailureDetail(result: { stdout: string; stderr: string; errorCategory?: unknown }): string {
+		const detail = result.stderr.trim() || result.stdout.trim();
+		if (detail.length > 0) {
+			return detail;
+		}
+
+		if (result.errorCategory !== undefined) {
+			return String(result.errorCategory);
+		}
+
+		return "Command failed without output.";
 	}
 
 	private isNodeError(error: unknown): error is NodeJS.ErrnoException {

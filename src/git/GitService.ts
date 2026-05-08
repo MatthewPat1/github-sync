@@ -150,6 +150,22 @@ export class GitService {
 		};
 	}
 
+	async getLocalUserName(): Promise<GitCommandResult> {
+		return this.runGit({
+			args: ["config", "--local", "--get", "user.name"],
+			commandLabel: "git config --local --get user.name",
+			timeoutMs: 10000,
+		});
+	}
+
+	async getLocalUserEmail(): Promise<GitCommandResult> {
+		return this.runGit({
+			args: ["config", "--local", "--get", "user.email"],
+			commandLabel: "git config --local --get user.email",
+			timeoutMs: 10000,
+		});
+	}
+
 	async lsRemote(remote: string): Promise<GitCommandResult> {
 		return this.runGit({
 			args: ["ls-remote", remote],
