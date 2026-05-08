@@ -1,36 +1,57 @@
-import {App, PluginSettingTab, Setting} from "obsidian";
-import MyPlugin from "./main";
-
-export interface MyPluginSettings {
-	mySetting: string;
+export interface GitHubSyncSettings {
+	remoteName: string;
+	branchName: string;
+	autoSyncEnabled: boolean;
+	idleTimeoutSeconds: number;
+	startupPullEnabled: boolean;
+	startupPullDelaySeconds: number;
+	statusBarEnabled: boolean;
+	gitBinaryPath: string;
+	commitMessageTemplate: string;
+	gitUserName: string;
+	gitUserEmail: string;
+	ignorePatterns: string;
+	gitattributes: string;
 }
 
-export const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
-}
+export const DEFAULT_IGNORE_PATTERNS = [
+	".obsidian/workspace.json",
+	".obsidian/workspace-mobile.json",
+	".obsidian/cache/",
+	".obsidian/plugins/*/main.js.map",
+	".trash/",
+	".DS_Store",
+	"Thumbs.db",
+].join("\n");
 
-export class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
+export const DEFAULT_GITATTRIBUTES = [
+	"* text=auto",
+	"*.md text eol=lf",
+	"*.canvas text eol=lf",
+	"*.json text eol=lf",
+	"*.png binary",
+	"*.jpg binary",
+	"*.jpeg binary",
+	"*.gif binary",
+	"*.webp binary",
+	"*.pdf binary",
+	"*.mp3 binary",
+	"*.mp4 binary",
+	"*.mov binary",
+].join("\n");
 
-	constructor(app: App, plugin: MyPlugin) {
-		super(app, plugin);
-		this.plugin = plugin;
-	}
-
-	display(): void {
-		const {containerEl} = this;
-
-		containerEl.empty();
-
-		new Setting(containerEl)
-			.setName('Settings #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value;
-					await this.plugin.saveSettings();
-				}));
-	}
-}
+export const DEFAULT_SETTINGS: GitHubSyncSettings = {
+	remoteName: "origin",
+	branchName: "main",
+	autoSyncEnabled: true,
+	idleTimeoutSeconds: 10,
+	startupPullEnabled: true,
+	startupPullDelaySeconds: 5,
+	statusBarEnabled: true,
+	gitBinaryPath: "",
+	commitMessageTemplate: "vault sync: {{timestamp}} [{{device}}]",
+	gitUserName: "",
+	gitUserEmail: "",
+	ignorePatterns: DEFAULT_IGNORE_PATTERNS,
+	gitattributes: DEFAULT_GITATTRIBUTES,
+};

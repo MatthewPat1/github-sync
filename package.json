@@ -1,7 +1,7 @@
 {
-	"name": "obsidian-sample-plugin",
+	"name": "github-sync",
 	"version": "1.0.0",
-	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+	"description": "Sync an Obsidian vault with a GitHub repository using the local git binary.",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {

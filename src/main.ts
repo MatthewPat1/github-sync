@@ -1,99 +1,103 @@
-import {App, Editor, MarkdownView, Modal, Notice, Plugin} from 'obsidian';
-import {DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab} from "./settings";
+import { Notice, Plugin } from "obsidian";
+import { GitBinaryDetector } from "./git/GitBinaryDetector";
+import { GitService } from "./git/GitService";
+import { DEFAULT_SETTINGS, GitHubSyncSettings } from "./settings";
+import { SyncManager } from "./sync/SyncManager";
+import { SettingsTab } from "./ui/SettingsTab";
+import { StatusBarController } from "./ui/StatusBarController";
 
-// Remember to rename these classes and interfaces!
+export default class GitHubSyncPlugin extends Plugin {
+	settings: GitHubSyncSettings;
+	gitService: GitService;
+	syncManager: SyncManager;
+	statusBar: StatusBarController;
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
-
-	async onload() {
+	async onload(): Promise<void> {
 		await this.loadSettings();
 
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
+		const gitBinaryDetector = new GitBinaryDetector(this.settings);
+		this.gitService = new GitService({
+			app: this.app,
+			settings: this.settings,
+			gitBinaryDetector,
+		});
+		this.syncManager = new SyncManager({
+			settings: this.settings,
+			gitService: this.gitService,
+		});
+		this.statusBar = new StatusBarController(this, this.settings);
+
+		this.statusBar.showIdle();
+
+		this.addRibbonIcon("git-branch", "GitHub Sync: Sync now", () => {
+			void this.runManualSync();
 		});
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
-
-		// This adds a simple command that can be triggered anywhere
 		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
+			id: "sync-now",
+			name: "Sync now",
 			callback: () => {
-				new SampleModal(this.app).open();
-			}
+				void this.runManualSync();
+			},
 		});
-		// This adds an editor command that can perform some operation on the current editor instance
+
 		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				editor.replaceSelection('Sample editor command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-				return false;
-			}
+			id: "detect-git-binary",
+			name: "Detect git binary",
+			callback: () => {
+				void this.detectGitBinary();
+			},
 		});
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+		this.addSettingTab(new SettingsTab(this.app, this));
 
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			new Notice("Click");
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
-
+		if (this.settings.startupPullEnabled) {
+			const startupPullTimeout = window.setTimeout(() => {
+				void this.syncManager.startupPull();
+			}, this.settings.startupPullDelaySeconds * 1000);
+			this.register(() => window.clearTimeout(startupPullTimeout));
+		}
 	}
 
-	onunload() {
+	onunload(): void {
+		this.statusBar?.unload();
 	}
 
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MyPluginSettings>);
+	async loadSettings(): Promise<void> {
+		const loadedSettings = (await this.loadData()) as Partial<GitHubSyncSettings> | null;
+		this.settings = {
+			...DEFAULT_SETTINGS,
+			...loadedSettings,
+		};
 	}
 
-	async saveSettings() {
+	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
-	}
-}
-
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
+		this.statusBar?.refresh(this.settings);
 	}
 
-	onOpen() {
-		let {contentEl} = this;
-		contentEl.setText('Woah!');
+	private async runManualSync(): Promise<void> {
+		this.statusBar.showWorking("Syncing");
+		const result = await this.syncManager.syncNow();
+		if (result.ok) {
+			this.statusBar.showIdle();
+			new Notice("GitHub Sync: sync placeholder completed.");
+			return;
+		}
+
+		this.statusBar.showError();
+		new Notice(`GitHub Sync: ${result.message}`);
 	}
 
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
+	private async detectGitBinary(): Promise<void> {
+		const result = await this.gitService.detectGitBinary();
+		if (!result.ok) {
+			new Notice(`GitHub Sync: ${result.message}`);
+			return;
+		}
+
+		this.settings.gitBinaryPath = result.path;
+		await this.saveSettings();
+		new Notice(`GitHub Sync: using git at ${result.path}`);
 	}
 }
