@@ -296,7 +296,13 @@ export class GitService {
 
 	private shouldSkipRepositoryStateCheck(args: string[]): boolean {
 		const command = args[0] ?? "";
-		return command === "--version" || command === "rev-parse" || command === "ls-remote";
+		return (
+			command === "--version" ||
+			command === "rev-parse" ||
+			command === "ls-remote" ||
+			command === "diff" ||
+			command === "status"
+		);
 	}
 
 	private async getGitDirectory(): Promise<string | null> {

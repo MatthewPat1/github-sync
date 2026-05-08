@@ -26,6 +26,7 @@ export default class GitHubSyncPlugin extends Plugin {
 			gitService: this.gitService,
 		});
 		this.statusBar = new StatusBarController(this, this.settings);
+		this.registerSyncEventHandlers();
 
 		this.statusBar.showIdle();
 
@@ -99,5 +100,15 @@ export default class GitHubSyncPlugin extends Plugin {
 		this.settings.gitBinaryPath = result.path;
 		await this.saveSettings();
 		new Notice(`GitHub Sync: using git at ${result.path}`);
+	}
+
+	private registerSyncEventHandlers(): void {
+		this.register(this.syncManager.on("idle", () => this.statusBar.showIdle()));
+		this.register(this.syncManager.on("pulling", () => this.statusBar.showWorking("Pulling")));
+		this.register(this.syncManager.on("committing", () => this.statusBar.showWorking("Committing")));
+		this.register(this.syncManager.on("pushing", () => this.statusBar.showWorking("Pushing")));
+		this.register(this.syncManager.on("synced", () => this.statusBar.showIdle()));
+		this.register(this.syncManager.on("conflict", () => this.statusBar.showError()));
+		this.register(this.syncManager.on("error", () => this.statusBar.showError()));
 	}
 }
