@@ -128,10 +128,6 @@ export class SyncManager {
 			}
 		} finally {
 			this.isRunning = false;
-			this.emit({
-				state: "idle",
-				message: "GitHub Sync is idle.",
-			});
 		}
 
 		return firstResult ?? {

@@ -177,6 +177,10 @@ export class GitService {
 		};
 	}
 
+	getVaultRootPath(): string {
+		return this.getVaultPath();
+	}
+
 	private async runGit(command: GitCommandOptions): Promise<GitCommandResult> {
 		const detection = await this.detectGitBinary();
 		if (!detection.ok) {
