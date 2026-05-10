@@ -1,4 +1,6 @@
+import { Buffer } from "node:buffer";
 import { spawn } from "child_process";
+import process from "node:process";
 import { promises as fs } from "fs";
 import path from "path";
 import { App } from "obsidian";

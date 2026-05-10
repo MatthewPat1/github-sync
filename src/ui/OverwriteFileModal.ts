@@ -15,12 +15,12 @@ export class OverwriteFileModal extends Modal {
 		contentEl.empty();
 		contentEl.createEl("h2", { text: `Overwrite ${this.options.fileName}?` });
 		contentEl.createEl("p", {
-			text: `${this.options.fileName} already exists in the vault root. Overwriting it will replace the current file with the content from GitHub Sync settings.`,
+			text: `${this.options.fileName} already exists in the vault root. Overwriting it will replace the current file with the content from GitHub sync settings.`,
 		});
 
 		if (this.options.fileName === ".gitattributes") {
 			contentEl.createEl("p", {
-				text: ".gitattributes may cause a one-time line-ending normalization diff the next time git scans tracked files.",
+				text: "This may cause a one-time line-ending normalization diff the next time Git scans tracked files.",
 			});
 		}
 

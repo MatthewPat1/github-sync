@@ -3,7 +3,7 @@ import path from "path";
 import { Notice, Plugin, TAbstractFile } from "obsidian";
 import { GitBinaryDetector } from "./git/GitBinaryDetector";
 import { GitService } from "./git/GitService";
-import { DEFAULT_SETTINGS, GitHubSyncSettings } from "./settings";
+import { createDefaultSettings, GitHubSyncSettings } from "./settings";
 import { SyncManager } from "./sync/SyncManager";
 import { ConnectionCheckResult, ConnectionTestModal } from "./ui/ConnectionTestModal";
 import { ConflictModal } from "./ui/ConflictModal";
@@ -47,17 +47,17 @@ export default class GitHubSyncPlugin extends Plugin {
 
 		this.statusBar.showIdle();
 
-		this.addRibbonIcon("cloud-download", "GitHub Sync: Pull", () => {
+		this.addRibbonIcon("cloud-download", "Pull", () => {
 			void this.runPullOnly();
 		});
 
-		this.addRibbonIcon("refresh-cw", "GitHub Sync: Sync", () => {
+		this.addRibbonIcon("refresh-cw", "Sync", () => {
 			void this.runSyncNow();
 		});
 
 		this.addCommand({
 			id: "pull",
-			name: "GitHub Sync: Pull",
+			name: "Pull",
 			callback: () => {
 				void this.runPullOnly();
 			},
@@ -65,7 +65,7 @@ export default class GitHubSyncPlugin extends Plugin {
 
 		this.addCommand({
 			id: "sync-now",
-			name: "GitHub Sync: Sync now",
+			name: "Sync now",
 			callback: () => {
 				void this.runSyncNow();
 			},
@@ -73,7 +73,7 @@ export default class GitHubSyncPlugin extends Plugin {
 
 		this.addCommand({
 			id: "write-gitignore",
-			name: "GitHub Sync: Write .gitignore",
+			name: "Write .gitignore",
 			callback: () => {
 				void this.writeRootFile(".gitignore", this.settings.ignorePatterns);
 			},
@@ -81,7 +81,7 @@ export default class GitHubSyncPlugin extends Plugin {
 
 		this.addCommand({
 			id: "write-gitattributes",
-			name: "GitHub Sync: Write .gitattributes",
+			name: "Write .gitattributes",
 			callback: () => {
 				void this.writeRootFile(".gitattributes", this.settings.gitattributes);
 			},
@@ -89,7 +89,7 @@ export default class GitHubSyncPlugin extends Plugin {
 
 		this.addCommand({
 			id: "test-connection",
-			name: "GitHub Sync: Test connection",
+			name: "Test connection",
 			callback: () => {
 				void this.testConnection();
 			},
@@ -121,7 +121,7 @@ export default class GitHubSyncPlugin extends Plugin {
 	async loadSettings(): Promise<void> {
 		const loadedSettings = (await this.loadData()) as Partial<GitHubSyncSettings> | null;
 		this.settings = {
-			...DEFAULT_SETTINGS,
+			...createDefaultSettings(this.app.vault.configDir),
 			...loadedSettings,
 		};
 	}
@@ -138,14 +138,14 @@ export default class GitHubSyncPlugin extends Plugin {
 	private async runPullOnly(): Promise<void> {
 		const result = await this.syncManager.pullOnly();
 		if (result.state === "queued") {
-			new Notice("GitHub Sync: pull queued.");
+			new Notice("GitHub sync: pull queued.");
 		}
 	}
 
 	private async runSyncNow(): Promise<void> {
 		const result = await this.syncManager.fullSync("manual");
 		if (result.state === "queued") {
-			new Notice("GitHub Sync: sync queued.");
+			new Notice("GitHub sync: sync queued.");
 		}
 	}
 
@@ -189,11 +189,11 @@ export default class GitHubSyncPlugin extends Plugin {
 
 		new ConnectionTestModal(this.app, results).open();
 		if (results.every((result) => result.status !== "fail")) {
-			new Notice("GitHub Sync: connection test passed.");
+			new Notice("GitHub sync: connection test passed.");
 			return;
 		}
 
-		new Notice("GitHub Sync: connection test found issues.");
+		new Notice("GitHub sync: connection test found issues.");
 	}
 
 	async testSetupChecklist(): Promise<SetupChecklistItem[]> {
@@ -288,22 +288,22 @@ export default class GitHubSyncPlugin extends Plugin {
 	async copyTerminalSetupCommands(): Promise<void> {
 		try {
 			await navigator.clipboard.writeText(this.getTerminalSetupCommands());
-			new Notice("GitHub Sync: terminal setup commands copied.");
+			new Notice("GitHub sync: terminal setup commands copied.");
 		} catch {
-			new Notice("GitHub Sync: could not copy terminal setup commands.");
+			new Notice("GitHub sync: could not copy terminal setup commands.");
 		}
 	}
 
 	private async detectGitBinary(): Promise<void> {
 		const result = await this.gitService.detectGitBinary();
 		if (!result.ok) {
-			new Notice(`GitHub Sync: ${result.message}`);
+			new Notice(`GitHub sync: ${result.message}`);
 			return;
 		}
 
 		this.settings.gitBinaryPath = result.path;
 		await this.saveSettings();
-		new Notice(`GitHub Sync: using git at ${result.path}`);
+		new Notice(`GitHub sync: using git at ${result.path}`);
 	}
 
 	async writeRootFile(fileName: ".gitignore" | ".gitattributes", content: string): Promise<void> {
@@ -313,7 +313,7 @@ export default class GitHubSyncPlugin extends Plugin {
 		try {
 			const existingContent = await fs.readFile(filePath, "utf8");
 			if (existingContent === normalizedContent) {
-				new Notice(`GitHub Sync: ${fileName} is already up to date.`);
+				new Notice(`GitHub sync: ${fileName} is already up to date.`);
 				return;
 			}
 
@@ -325,7 +325,7 @@ export default class GitHubSyncPlugin extends Plugin {
 			}).open();
 		} catch (error) {
 			if (!this.isNodeError(error) || error.code !== "ENOENT") {
-				new Notice(`GitHub Sync: failed to read ${fileName}.`);
+				new Notice(`GitHub sync: failed to read ${fileName}.`);
 				return;
 			}
 
@@ -341,9 +341,9 @@ export default class GitHubSyncPlugin extends Plugin {
 		try {
 			this.suppressGeneratedWriteEvent(fileName);
 			await fs.writeFile(filePath, content, "utf8");
-			new Notice(`GitHub Sync: wrote ${fileName}.`);
+			new Notice(`GitHub sync: wrote ${fileName}.`);
 		} catch {
-			new Notice(`GitHub Sync: failed to write ${fileName}.`);
+			new Notice(`GitHub sync: failed to write ${fileName}.`);
 		}
 	}
 
@@ -356,14 +356,14 @@ export default class GitHubSyncPlugin extends Plugin {
 			this.syncManager.on("synced", (event) => {
 				this.statusBar.showSynced();
 				if (event.trigger !== "auto") {
-					new Notice(`GitHub Sync: ${event.message}`);
+					new Notice(`GitHub sync: ${event.message}`);
 				}
 			}),
 		);
 		this.register(
 			this.syncManager.on("conflict", (event) => {
 				this.statusBar.showConflict();
-				new Notice(`GitHub Sync: ${event.message}`);
+				new Notice(`GitHub sync: ${event.message}`);
 				new ConflictModal(this.app, {
 					conflictedFiles: event.conflictedFiles ?? [],
 					rawResult: event.result,
@@ -375,7 +375,7 @@ export default class GitHubSyncPlugin extends Plugin {
 					retrySync: async () => {
 						const result = await this.syncManager.fullSync("manual");
 						if (result.state === "queued") {
-							new Notice("GitHub Sync: sync queued.");
+							new Notice("GitHub sync: sync queued.");
 						}
 					},
 				}).open();
@@ -384,7 +384,7 @@ export default class GitHubSyncPlugin extends Plugin {
 		this.register(
 			this.syncManager.on("error", (event) => {
 				this.statusBar.showError();
-				new Notice(`GitHub Sync: ${event.message}`);
+				new Notice(`GitHub sync: ${event.message}`);
 			}),
 		);
 	}
@@ -532,8 +532,8 @@ export default class GitHubSyncPlugin extends Plugin {
 			return detail;
 		}
 
-		if (result.errorCategory !== undefined) {
-			return String(result.errorCategory);
+		if (typeof result.errorCategory === "string") {
+			return result.errorCategory;
 		}
 
 		return "Command failed without output.";
@@ -573,7 +573,7 @@ export default class GitHubSyncPlugin extends Plugin {
 		].join("\n");
 	}
 
-	private isNodeError(error: unknown): error is NodeJS.ErrnoException {
+	private isNodeError(error: unknown): error is Error & { code?: string } {
 		return error instanceof Error;
 	}
 }

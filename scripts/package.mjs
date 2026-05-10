@@ -1,4 +1,6 @@
+import { Buffer } from "node:buffer";
 import { spawnSync } from "node:child_process";
+import process from "node:process";
 import { constants, promises as fs } from "node:fs";
 import path from "node:path";
 

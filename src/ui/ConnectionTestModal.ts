@@ -16,7 +16,7 @@ export class ConnectionTestModal extends Modal {
 	onOpen(): void {
 		const { contentEl } = this;
 		contentEl.empty();
-		contentEl.createEl("h2", { text: "GitHub Sync connection test" });
+		contentEl.createEl("h2", { text: "GitHub sync connection test" });
 
 		const listEl = contentEl.createEl("ul");
 		for (const result of this.results) {

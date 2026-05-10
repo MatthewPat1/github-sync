@@ -30,22 +30,22 @@ export class StatusBarController {
 
 	showIdle(): void {
 		this.lastSyncedAt = null;
-		this.setText("☁ GitHub Sync");
+		this.setText("☁ GitHub sync");
 	}
 
 	showPulling(): void {
 		this.lastSyncedAt = null;
-		this.setText("↓ Pulling…");
+		this.setText("↓ pulling…");
 	}
 
 	showCommitting(): void {
 		this.lastSyncedAt = null;
-		this.setText("● Committing…");
+		this.setText("● committing…");
 	}
 
 	showPushing(): void {
 		this.lastSyncedAt = null;
-		this.setText("↑ Pushing…");
+		this.setText("↑ pushing…");
 	}
 
 	showSynced(date: Date = new Date()): void {
@@ -56,17 +56,17 @@ export class StatusBarController {
 
 	showConflict(): void {
 		this.lastSyncedAt = null;
-		this.setText("⚠ Conflict!");
+		this.setText("⚠ conflict!");
 	}
 
 	showError(): void {
 		this.lastSyncedAt = null;
-		this.setText("✗ Sync error");
+		this.setText("✗ sync error");
 	}
 
 	showWorking(label: string): void {
 		this.lastSyncedAt = null;
-		this.setText(`GitHub Sync: ${label}`);
+		this.setText(`GitHub sync: ${label}`);
 	}
 
 	unload(): void {
@@ -107,11 +107,34 @@ export class StatusBarController {
 			return;
 		}
 
-		const elapsedMinutes = Math.max(
-			0,
-			Math.floor((Date.now() - this.lastSyncedAt.getTime()) / (60 * 1000)),
-		);
-		const unit = elapsedMinutes === 1 ? "minute" : "minutes";
-		this.setText(`✓ Synced ${elapsedMinutes} ${unit} ago`);
+		this.setText(`✓ synced ${formatSyncedAt(this.lastSyncedAt, new Date())}`);
 	}
+}
+
+export function formatSyncedAt(syncedAt: Date, now: Date): string {
+	const elapsedMinutes = Math.max(0, Math.floor((now.getTime() - syncedAt.getTime()) / (60 * 1000)));
+	if (elapsedMinutes < 60) {
+		return `${elapsedMinutes} ${pluralize("minute", elapsedMinutes)} ago`;
+	}
+
+	const elapsedHours = Math.floor(elapsedMinutes / 60);
+	if (elapsedHours < 24) {
+		return `${elapsedHours} ${pluralize("hour", elapsedHours)} ago`;
+	}
+
+	const elapsedDays = Math.floor(elapsedHours / 24);
+	if (elapsedDays < 2) {
+		const remainingHours = elapsedHours % 24;
+		if (remainingHours === 0) {
+			return `${elapsedDays} ${pluralize("day", elapsedDays)} ago`;
+		}
+
+		return `${elapsedDays} ${pluralize("day", elapsedDays)} ${remainingHours} ${pluralize("hour", remainingHours)} ago`;
+	}
+
+	return `on ${syncedAt.toLocaleString()}`;
+}
+
+function pluralize(unit: string, value: number): string {
+	return value === 1 ? unit : `${unit}s`;
 }

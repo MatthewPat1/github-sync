@@ -14,8 +14,6 @@ export class SettingsTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl("h2", { text: "GitHub Sync" });
-
 		this.addSetupChecklistSection(containerEl);
 		this.addRepositorySection(containerEl);
 		this.addAutoSyncSection(containerEl);
@@ -25,9 +23,9 @@ export class SettingsTab extends PluginSettingTab {
 	}
 
 	private addSetupChecklistSection(containerEl: HTMLElement): void {
-		containerEl.createEl("h3", { text: "Setup checklist" });
+		new Setting(containerEl).setName("Setup checklist").setHeading();
 		containerEl.createEl("p", {
-			text: "Use this checklist to confirm the vault is ready for GitHub Sync. The plugin will not run git init or add remotes automatically.",
+			text: "Use this checklist to confirm the vault is ready to sync. The plugin will not run Git init or add remotes automatically.",
 			cls: "setting-item-description",
 		});
 
@@ -36,7 +34,7 @@ export class SettingsTab extends PluginSettingTab {
 			.setDesc(this.setupTestRunning ? "Testing setup..." : "Run setup checks or copy terminal commands for manual setup.")
 			.addButton((button) =>
 				button
-					.setButtonText(this.setupTestRunning ? "Testing..." : "Test Setup")
+					.setButtonText(this.setupTestRunning ? "Testing..." : "Test setup")
 					.setDisabled(this.setupTestRunning)
 					.onClick(() => {
 						void this.testSetup();
@@ -67,7 +65,7 @@ export class SettingsTab extends PluginSettingTab {
 		if (this.setupResults === null) {
 			new Setting(containerEl)
 				.setName("Setup status")
-				.setDesc("Click Test Setup to check Git, repository, remote, branch, author, and setup files.");
+				.setDesc("Click test setup to check Git, repository, remote, branch, author, and setup files.");
 			return;
 		}
 
@@ -90,14 +88,13 @@ export class SettingsTab extends PluginSettingTab {
 	}
 
 	private addRepositorySection(containerEl: HTMLElement): void {
-		containerEl.createEl("h3", { text: "Repository" });
+		new Setting(containerEl).setName("Repository").setHeading();
 
 		new Setting(containerEl)
 			.setName("Remote name")
 			.setDesc("Git remote used for pull and push.")
 			.addText((text) =>
 				text
-					.setPlaceholder("origin")
 					.setValue(this.plugin.settings.remoteName)
 					.onChange(async (value) => {
 						this.plugin.settings.remoteName = value.trim();
@@ -110,7 +107,6 @@ export class SettingsTab extends PluginSettingTab {
 			.setDesc("Git branch used for pull and push.")
 			.addText((text) =>
 				text
-					.setPlaceholder("main")
 					.setValue(this.plugin.settings.branchName)
 					.onChange(async (value) => {
 						this.plugin.settings.branchName = value.trim();
@@ -120,7 +116,7 @@ export class SettingsTab extends PluginSettingTab {
 	}
 
 	private addAutoSyncSection(containerEl: HTMLElement): void {
-		containerEl.createEl("h3", { text: "Auto Sync" });
+		new Setting(containerEl).setName("Auto sync").setHeading();
 
 		new Setting(containerEl)
 			.setName("Auto sync")
@@ -181,7 +177,7 @@ export class SettingsTab extends PluginSettingTab {
 	}
 
 	private addCommitsSection(containerEl: HTMLElement): void {
-		containerEl.createEl("h3", { text: "Commits" });
+		new Setting(containerEl).setName("Commits").setHeading();
 
 		new Setting(containerEl)
 			.setName("Commit message template")
@@ -217,7 +213,7 @@ export class SettingsTab extends PluginSettingTab {
 	}
 
 	private addIgnorePatternsSection(containerEl: HTMLElement): void {
-		containerEl.createEl("h3", { text: "Ignore Patterns" });
+		new Setting(containerEl).setName("Ignore patterns").setHeading();
 
 		new Setting(containerEl)
 			.setName(".gitignore content")
@@ -244,14 +240,13 @@ export class SettingsTab extends PluginSettingTab {
 	}
 
 	private addAdvancedSection(containerEl: HTMLElement): void {
-		containerEl.createEl("h3", { text: "Advanced" });
+		new Setting(containerEl).setName("Advanced").setHeading();
 
 		new Setting(containerEl)
 			.setName("Git binary path override")
-			.setDesc("Leave empty to auto-detect git.")
+			.setDesc("Leave empty to auto-detect Git.")
 			.addText((text) =>
 				text
-					.setPlaceholder("git")
 					.setValue(this.plugin.settings.gitBinaryPath)
 					.onChange(async (value) => {
 						this.plugin.settings.gitBinaryPath = value.trim();
@@ -261,7 +256,7 @@ export class SettingsTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Status bar")
-			.setDesc("Show GitHub Sync state in the Obsidian status bar.")
+			.setDesc("Show GitHub sync state in the Obsidian status bar.")
 			.addToggle((toggle) =>
 				toggle.setValue(this.plugin.settings.statusBarEnabled).onChange(async (value) => {
 					this.plugin.settings.statusBarEnabled = value;
@@ -271,7 +266,7 @@ export class SettingsTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Test connection")
-			.setDesc("Check git, repository state, branch, remote access, and optional local author config.")
+			.setDesc("Check Git, repository state, branch, remote access, and optional local author config.")
 			.addButton((button) =>
 				button
 					.setButtonText("Test connection")

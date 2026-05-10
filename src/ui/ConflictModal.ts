@@ -48,7 +48,7 @@ export class ConflictModal extends Modal {
 		}
 
 		const rawOutputEl = contentEl.createEl("details");
-		rawOutputEl.createEl("summary", { text: "Raw git output" });
+		rawOutputEl.createEl("summary", { text: "Raw Git output" });
 		rawOutputEl.createEl("pre", {
 			text: this.getRawGitOutput(),
 		});
@@ -65,7 +65,7 @@ export class ConflictModal extends Modal {
 				}),
 			)
 			.addButton((button) =>
-				this.configureButton(button, "Retry Sync", () => {
+				this.configureButton(button, "Retry sync", () => {
 					void this.retrySync();
 				}),
 			);
@@ -81,7 +81,7 @@ export class ConflictModal extends Modal {
 
 	private async copyInstructions(): Promise<void> {
 		const text = [
-			"GitHub Sync conflict resolution",
+			"GitHub sync conflict resolution",
 			"",
 			...getConflictInstructions(this.options.conflictedFiles).map((instruction, index) => `${index + 1}. ${instruction}`),
 			"",
@@ -91,9 +91,9 @@ export class ConflictModal extends Modal {
 
 		try {
 			await navigator.clipboard.writeText(text);
-			new Notice("GitHub Sync: conflict instructions copied.");
+			new Notice("GitHub sync: conflict instructions copied.");
 		} catch {
-			new Notice("GitHub Sync: could not copy conflict instructions.");
+			new Notice("GitHub sync: could not copy conflict instructions.");
 		}
 	}
 
@@ -103,22 +103,22 @@ export class ConflictModal extends Modal {
 			const { shell } = require("electron");
 			errorMessage = await shell.openPath(this.options.vaultPath);
 		} catch {
-			new Notice("GitHub Sync: could not open vault folder.");
+			new Notice("GitHub sync: could not open vault folder.");
 			return;
 		}
 
 		if (errorMessage.length > 0) {
-			new Notice(`GitHub Sync: could not open vault folder. ${errorMessage}`);
+			new Notice(`GitHub sync: could not open vault folder. ${errorMessage}`);
 			return;
 		}
 
-		new Notice("GitHub Sync: opened vault folder.");
+		new Notice("GitHub sync: opened vault folder.");
 	}
 
 	private async retrySync(): Promise<void> {
 		const unresolvedFiles = await this.options.getUnresolvedFiles();
 		if (unresolvedFiles.length > 0) {
-			new Notice(`GitHub Sync: ${unresolvedFiles.length} conflicted file(s) still need resolution.`);
+			new Notice(`GitHub sync: ${unresolvedFiles.length} conflicted file(s) still need resolution.`);
 			return;
 		}
 
