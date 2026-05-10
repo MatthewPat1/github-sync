@@ -11,6 +11,13 @@ import { OverwriteFileModal } from "./ui/OverwriteFileModal";
 import { SettingsTab } from "./ui/SettingsTab";
 import { StatusBarController } from "./ui/StatusBarController";
 
+export interface SetupChecklistItem {
+	id: string;
+	label: string;
+	passed: boolean;
+	detail: string;
+}
+
 export default class GitHubSyncPlugin extends Plugin {
 	settings: GitHubSyncSettings;
 	gitService: GitService;
@@ -187,6 +194,104 @@ export default class GitHubSyncPlugin extends Plugin {
 		}
 
 		new Notice("GitHub Sync: connection test found issues.");
+	}
+
+	async testSetupChecklist(): Promise<SetupChecklistItem[]> {
+		const remoteName = this.settings.remoteName.trim() || "origin";
+		const branchName = this.settings.branchName.trim() || "main";
+		const results: SetupChecklistItem[] = [];
+
+		const gitVersion = await this.gitService.getGitVersion();
+		results.push({
+			id: "git-binary",
+			label: "Git binary found",
+			passed: gitVersion.exitCode === 0,
+			detail: gitVersion.exitCode === 0 ? gitVersion.stdout.trim() : this.getCommandFailureDetail(gitVersion),
+		});
+
+		const workTree = await this.gitService.isInsideWorkTree();
+		results.push({
+			id: "work-tree",
+			label: "Vault folder is a Git repo",
+			passed: workTree.exitCode === 0 && workTree.value,
+			detail: workTree.exitCode === 0 && workTree.value
+				? "The vault root is inside a Git working tree."
+				: this.getCommandFailureDetail(workTree),
+		});
+
+		const remoteUrl = await this.gitService.getRemoteUrl(remoteName);
+		results.push({
+			id: "remote-exists",
+			label: `Remote ${remoteName} exists`,
+			passed: remoteUrl.exitCode === 0 && remoteUrl.stdout.trim().length > 0,
+			detail: remoteUrl.exitCode === 0 && remoteUrl.stdout.trim().length > 0
+				? `Remote URL is configured for ${remoteName}.`
+				: this.getCommandFailureDetail(remoteUrl),
+		});
+
+		const currentBranch = await this.gitService.getCurrentBranch();
+		const actualBranch = currentBranch.stdout.trim();
+		results.push({
+			id: "branch-matches",
+			label: "Current branch matches configured branch",
+			passed: currentBranch.exitCode === 0 && actualBranch === branchName,
+			detail: currentBranch.exitCode === 0
+				? `Current branch: ${actualBranch || "<none>"}. Configured branch: ${branchName}.`
+				: this.getCommandFailureDetail(currentBranch),
+		});
+
+		const remoteReachable = await this.gitService.lsRemote(remoteName);
+		results.push({
+			id: "remote-reachable",
+			label: "GitHub remote is reachable",
+			passed: remoteReachable.exitCode === 0,
+			detail: remoteReachable.exitCode === 0
+				? `git ls-remote ${remoteName} succeeded.`
+				: this.getCommandFailureDetail(remoteReachable),
+		});
+
+		const localName = await this.gitService.getLocalUserName();
+		const localEmail = await this.gitService.getLocalUserEmail();
+		const hasSettingsUser = this.settings.gitUserName.trim().length > 0 && this.settings.gitUserEmail.trim().length > 0;
+		const hasLocalUser = localName.exitCode === 0 && localName.stdout.trim().length > 0 &&
+			localEmail.exitCode === 0 && localEmail.stdout.trim().length > 0;
+		results.push({
+			id: "git-user",
+			label: "Git user.name and user.email are configured",
+			passed: hasSettingsUser || hasLocalUser,
+			detail: hasSettingsUser
+				? "Plugin settings provide both Git user name and email."
+				: hasLocalUser
+					? "Local repository config provides both user.name and user.email."
+					: "Set Git user name and email in plugin settings or configure local git user.name and user.email.",
+		});
+
+		const gitignoreExists = await this.vaultRootFileExists(".gitignore");
+		results.push({
+			id: "gitignore",
+			label: ".gitignore exists",
+			passed: gitignoreExists,
+			detail: gitignoreExists ? ".gitignore exists in the vault root." : "Create .gitignore before your first commit.",
+		});
+
+		const gitattributesExists = await this.vaultRootFileExists(".gitattributes");
+		results.push({
+			id: "gitattributes",
+			label: ".gitattributes exists",
+			passed: gitattributesExists,
+			detail: gitattributesExists ? ".gitattributes exists in the vault root." : "Create .gitattributes before your first commit.",
+		});
+
+		return results;
+	}
+
+	async copyTerminalSetupCommands(): Promise<void> {
+		try {
+			await navigator.clipboard.writeText(this.getTerminalSetupCommands());
+			new Notice("GitHub Sync: terminal setup commands copied.");
+		} catch {
+			new Notice("GitHub Sync: could not copy terminal setup commands.");
+		}
 	}
 
 	private async detectGitBinary(): Promise<void> {
@@ -432,6 +537,40 @@ export default class GitHubSyncPlugin extends Plugin {
 		}
 
 		return "Command failed without output.";
+	}
+
+	private async vaultRootFileExists(fileName: ".gitignore" | ".gitattributes"): Promise<boolean> {
+		try {
+			await fs.access(path.join(this.gitService.getVaultRootPath(), fileName));
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	private getTerminalSetupCommands(): string {
+		const remoteName = this.settings.remoteName.trim() || "origin";
+		const branchName = this.settings.branchName.trim() || "main";
+		return [
+			"# Run these commands from inside your Obsidian vault folder.",
+			"git init",
+			`git branch -M ${branchName}`,
+			"",
+			"cat > .gitignore <<'EOF'",
+			this.settings.ignorePatterns,
+			"EOF",
+			"",
+			"cat > .gitattributes <<'EOF'",
+			this.settings.gitattributes,
+			"EOF",
+			"",
+			"git add .",
+			'git commit -m "Initial vault commit"',
+			"",
+			"# Replace USER/REPO with your GitHub repository.",
+			`git remote add ${remoteName} git@github.com:USER/REPO.git`,
+			`git push -u ${remoteName} ${branchName}`,
+		].join("\n");
 	}
 
 	private isNodeError(error: unknown): error is NodeJS.ErrnoException {

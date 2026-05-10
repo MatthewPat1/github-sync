@@ -1,7 +1,11 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type GitHubSyncPlugin from "../main";
+import type { SetupChecklistItem } from "../main";
 
 export class SettingsTab extends PluginSettingTab {
+	private setupResults: SetupChecklistItem[] | null = null;
+	private setupTestRunning = false;
+
 	constructor(app: App, private readonly plugin: GitHubSyncPlugin) {
 		super(app, plugin);
 	}
@@ -12,11 +16,77 @@ export class SettingsTab extends PluginSettingTab {
 
 		containerEl.createEl("h2", { text: "GitHub Sync" });
 
+		this.addSetupChecklistSection(containerEl);
 		this.addRepositorySection(containerEl);
 		this.addAutoSyncSection(containerEl);
 		this.addCommitsSection(containerEl);
 		this.addIgnorePatternsSection(containerEl);
 		this.addAdvancedSection(containerEl);
+	}
+
+	private addSetupChecklistSection(containerEl: HTMLElement): void {
+		containerEl.createEl("h3", { text: "Setup checklist" });
+		containerEl.createEl("p", {
+			text: "Use this checklist to confirm the vault is ready for GitHub Sync. The plugin will not run git init or add remotes automatically.",
+			cls: "setting-item-description",
+		});
+
+		new Setting(containerEl)
+			.setName("Setup actions")
+			.setDesc(this.setupTestRunning ? "Testing setup..." : "Run setup checks or copy terminal commands for manual setup.")
+			.addButton((button) =>
+				button
+					.setButtonText(this.setupTestRunning ? "Testing..." : "Test Setup")
+					.setDisabled(this.setupTestRunning)
+					.onClick(() => {
+						void this.testSetup();
+					}),
+			)
+			.addButton((button) =>
+				button
+					.setButtonText("Write .gitignore")
+					.onClick(() => {
+						void this.plugin.writeRootFile(".gitignore", this.plugin.settings.ignorePatterns);
+					}),
+			)
+			.addButton((button) =>
+				button
+					.setButtonText("Write .gitattributes")
+					.onClick(() => {
+						void this.plugin.writeRootFile(".gitattributes", this.plugin.settings.gitattributes);
+					}),
+			)
+			.addButton((button) =>
+				button
+					.setButtonText("Copy terminal setup commands")
+					.onClick(() => {
+						void this.plugin.copyTerminalSetupCommands();
+					}),
+			);
+
+		if (this.setupResults === null) {
+			new Setting(containerEl)
+				.setName("Setup status")
+				.setDesc("Click Test Setup to check Git, repository, remote, branch, author, and setup files.");
+			return;
+		}
+
+		for (const result of this.setupResults) {
+			new Setting(containerEl)
+				.setName(`${result.passed ? "Pass" : "Fail"}: ${result.label}`)
+				.setDesc(result.detail);
+		}
+	}
+
+	private async testSetup(): Promise<void> {
+		this.setupTestRunning = true;
+		this.display();
+		try {
+			this.setupResults = await this.plugin.testSetupChecklist();
+		} finally {
+			this.setupTestRunning = false;
+			this.display();
+		}
 	}
 
 	private addRepositorySection(containerEl: HTMLElement): void {

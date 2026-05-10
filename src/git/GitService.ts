@@ -63,6 +63,14 @@ export class GitService {
 		});
 	}
 
+	async getRemoteUrl(remote: string): Promise<GitCommandResult> {
+		return this.runGit({
+			args: ["remote", "get-url", remote],
+			commandLabel: `git remote get-url ${redactSecrets(remote)}`,
+			timeoutMs: 10000,
+		});
+	}
+
 	async getStatusPorcelain(): Promise<GitCommandResult> {
 		return this.runGit({
 			args: ["status", "--porcelain=v1"],
