@@ -217,6 +217,38 @@ git branch -r
 
 If your repository uses `master` or another branch name instead of `main`, update the plugin `branchName` setting to match, or rename your branch intentionally in Git.
 
+## Release flow
+
+GitHub Actions can create an installable release when you push a version tag such as `1.0.0`.
+
+1. Update `manifest.json` so `version` is the release version.
+2. Update `package.json` to the same version if applicable.
+3. Commit and push the version changes.
+4. Create a tag that exactly matches `manifest.json` version.
+5. Push the tag.
+
+Example:
+
+```bash
+git add manifest.json package.json package-lock.json versions.json
+git commit -m "Release 1.0.0"
+git push
+git tag 1.0.0
+git push origin 1.0.0
+```
+
+The release workflow runs `npm ci`, `npm run lint`, `npm run build`, and `npm run package`. It verifies the pushed tag matches `manifest.json` version, then creates a GitHub release with:
+
+- `manifest.json`
+- `main.js`
+- `styles.css` if present
+- `github-sync.zip`
+
+Install options:
+
+- BRAT: add the repository through BRAT and install the tagged release.
+- Manual ZIP: download `github-sync.zip`, unzip it, and place the `github-sync` folder in your vault at the Obsidian plugins folder.
+
 ## Development
 
 - `npm run dev` starts the esbuild watcher.
