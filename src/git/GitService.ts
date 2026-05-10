@@ -90,6 +90,18 @@ export class GitService {
 		};
 	}
 
+	async hasStagedChanges(): Promise<GitBooleanResult> {
+		const result = await this.runGit({
+			args: ["diff", "--cached", "--quiet"],
+			commandLabel: "git diff --cached --quiet",
+		});
+
+		return {
+			...result,
+			value: result.exitCode === 1,
+		};
+	}
+
 	async fetch(remote: string): Promise<GitCommandResult> {
 		return this.runGit({
 			args: ["fetch", "--prune", remote],
@@ -110,6 +122,23 @@ export class GitService {
 		return this.runGit({
 			args: ["add", "--all"],
 			commandLabel: "git add --all",
+		});
+	}
+
+	async stagePaths(paths: string[]): Promise<GitCommandResult> {
+		const uniquePaths = Array.from(new Set(paths.filter((filePath) => filePath.length > 0)));
+		if (uniquePaths.length === 0) {
+			return {
+				exitCode: 0,
+				stdout: "",
+				stderr: "",
+				commandLabel: "git add -- <paths>",
+			};
+		}
+
+		return this.runGit({
+			args: ["add", "--", ...uniquePaths],
+			commandLabel: `git add -- <${uniquePaths.length} path(s)>`,
 		});
 	}
 

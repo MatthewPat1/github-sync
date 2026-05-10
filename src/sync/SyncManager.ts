@@ -25,6 +25,7 @@ type SyncOperation =
 	| {
 			type: "fullSync";
 			trigger: SyncTrigger;
+			changedPaths: string[];
 	  };
 
 export interface SyncEvent {
@@ -81,8 +82,8 @@ export class SyncManager {
 		return this.enqueueOrRun({ type: "pullOnly" });
 	}
 
-	async fullSync(trigger: SyncTrigger): Promise<SyncResult> {
-		return this.enqueueOrRun({ type: "fullSync", trigger });
+	async fullSync(trigger: SyncTrigger, changedPaths: string[] = []): Promise<SyncResult> {
+		return this.enqueueOrRun({ type: "fullSync", trigger, changedPaths });
 	}
 
 	async syncNow(): Promise<SyncResult> {
@@ -142,7 +143,7 @@ export class SyncManager {
 			return this.runPullOnly();
 		}
 
-		return this.runFullSync(operation.trigger);
+		return this.runFullSync(operation.trigger, operation.changedPaths);
 	}
 
 	private async runPullOnly(): Promise<SyncResult> {
@@ -162,7 +163,7 @@ export class SyncManager {
 		return this.handlePullOnlyResult(pullResult);
 	}
 
-	private async runFullSync(trigger: SyncTrigger): Promise<SyncResult> {
+	private async runFullSync(trigger: SyncTrigger, changedPaths: string[]): Promise<SyncResult> {
 		const validation = await this.validateRepoState(trigger);
 		if (!validation.ok) {
 			return validation;
@@ -196,19 +197,28 @@ export class SyncManager {
 			return this.syncedResult("No local changes to commit after pull.", trigger);
 		}
 
-		if (trigger === "auto") {
-			return this.errorResult("Auto-sync found local changes. Run manual sync to review and commit them.", {
-				...changes,
-				exitCode: 1,
-			}, trigger);
-		}
-
 		this.emit({
 			state: "committing",
 			message: "Committing local changes.",
 			trigger,
 		});
-		const stageResult = await this.options.gitService.stageAll();
+		if (trigger === "auto") {
+			const stagedChanges = await this.options.gitService.hasStagedChanges();
+			if (stagedChanges.exitCode > 1) {
+				return this.errorResult("Failed to check staged changes.", stagedChanges, trigger);
+			}
+
+			if (stagedChanges.value) {
+				return this.errorResult("Auto-sync found pre-staged changes. Run manual sync to review and commit them.", {
+					...stagedChanges,
+					exitCode: 1,
+				}, trigger);
+			}
+		}
+
+		const stageResult = trigger === "auto"
+			? await this.options.gitService.stagePaths(changedPaths)
+			: await this.options.gitService.stageAll();
 		if (stageResult.exitCode !== 0) {
 			return this.errorResult("Failed to stage local changes.", stageResult, trigger);
 		}

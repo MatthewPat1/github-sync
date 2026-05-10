@@ -20,6 +20,7 @@ export default class GitHubSyncPlugin extends Plugin {
 	private startupPullTimeoutId: number | null = null;
 	private readonly pluginGeneratedWritePaths = new Set<string>();
 	private readonly pluginGeneratedWriteTimeouts = new Set<number>();
+	private readonly pendingAutoSyncPaths = new Set<string>();
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -106,6 +107,7 @@ export default class GitHubSyncPlugin extends Plugin {
 		}
 		this.pluginGeneratedWriteTimeouts.clear();
 		this.pluginGeneratedWritePaths.clear();
+		this.pendingAutoSyncPaths.clear();
 		this.statusBar?.unload();
 	}
 
@@ -122,6 +124,7 @@ export default class GitHubSyncPlugin extends Plugin {
 		this.statusBar?.refresh(this.settings);
 		if (!this.settings.autoSyncEnabled) {
 			this.clearAutoSyncTimer();
+			this.pendingAutoSyncPaths.clear();
 		}
 	}
 
@@ -317,18 +320,25 @@ export default class GitHubSyncPlugin extends Plugin {
 			return;
 		}
 
-		this.scheduleAutoSync();
+		this.scheduleAutoSync([file.path, oldPath].filter(isDefined));
 	}
 
-	private scheduleAutoSync(): void {
+	private scheduleAutoSync(changedPaths: string[]): void {
+		for (const changedPath of changedPaths) {
+			this.pendingAutoSyncPaths.add(changedPath);
+		}
+
 		this.clearAutoSyncTimer();
 		this.autoSyncTimeoutId = window.setTimeout(() => {
 			this.autoSyncTimeoutId = null;
 			if (!this.settings.autoSyncEnabled) {
+				this.pendingAutoSyncPaths.clear();
 				return;
 			}
 
-			void this.syncManager.fullSync("auto");
+			const paths = Array.from(this.pendingAutoSyncPaths);
+			this.pendingAutoSyncPaths.clear();
+			void this.syncManager.fullSync("auto", paths);
 		}, this.settings.idleTimeoutSeconds * 1000);
 	}
 
@@ -427,4 +437,8 @@ export default class GitHubSyncPlugin extends Plugin {
 	private isNodeError(error: unknown): error is NodeJS.ErrnoException {
 		return error instanceof Error;
 	}
+}
+
+function isDefined<T>(value: T | undefined): value is T {
+	return value !== undefined;
 }
