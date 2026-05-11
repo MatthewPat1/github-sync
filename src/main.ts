@@ -3,7 +3,7 @@ import path from "path";
 import { Notice, Plugin, TAbstractFile } from "obsidian";
 import { GitBinaryDetector } from "./git/GitBinaryDetector";
 import { GitService } from "./git/GitService";
-import { createDefaultSettings, GitHubSyncSettings } from "./settings";
+import { createDefaultSettings, ensureRequiredIgnorePatterns, GitHubSyncSettings } from "./settings";
 import { SyncManager } from "./sync/SyncManager";
 import { ConnectionCheckResult, ConnectionTestModal } from "./ui/ConnectionTestModal";
 import { ConflictModal } from "./ui/ConflictModal";
@@ -124,6 +124,10 @@ export default class GitHubSyncPlugin extends Plugin {
 			...createDefaultSettings(this.app.vault.configDir),
 			...loadedSettings,
 		};
+		this.settings.ignorePatterns = ensureRequiredIgnorePatterns(
+			this.settings.ignorePatterns,
+			this.app.vault.configDir,
+		);
 	}
 
 	async saveSettings(): Promise<void> {

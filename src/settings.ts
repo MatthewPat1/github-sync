@@ -20,10 +20,44 @@ export function createDefaultIgnorePatterns(configDir: string): string {
 		"Thumbs.db",
 		"desktop.ini",
 		".trash/",
+		"",
+		...createRequiredIgnorePatterns(configDir),
+	].join("\n");
+}
+
+export function ensureRequiredIgnorePatterns(ignorePatterns: string, configDir: string): string {
+	const requiredPatterns = createRequiredIgnorePatterns(configDir);
+	const existingLines = new Set(ignorePatterns.split(/\r?\n/).map((line) => line.trim()));
+	const missingPatterns = requiredPatterns.filter((line) => line.length > 0 && !line.startsWith("#") && !existingLines.has(line));
+	if (missingPatterns.length === 0) {
+		return ignorePatterns;
+	}
+
+	const separator = ignorePatterns.trim().length > 0 ? "\n\n" : "";
+	return `${ignorePatterns.trimEnd()}${separator}${requiredPatterns.join("\n")}`;
+}
+
+function createRequiredIgnorePatterns(configDir: string): string[] {
+	return [
+		"# Obsidian workspace and cache noise",
 		`${configDir}/workspace.json`,
 		`${configDir}/workspace-mobile.json`,
 		`${configDir}/cache/`,
-	].join("\n");
+		"",
+		"# Ignore all plugin internals by default",
+		`${configDir}/plugins/**`,
+		"",
+		"# But allow plugin folders and install files",
+		`!${configDir}/plugins/`,
+		`!${configDir}/plugins/*/`,
+		`!${configDir}/plugins/*/manifest.json`,
+		`!${configDir}/plugins/*/main.js`,
+		`!${configDir}/plugins/*/styles.css`,
+		"# Keep these managed outside the vault repo",
+		`${configDir}/plugins/github-sync/`,
+		`${configDir}/plugins/obsidian42-brat/`,
+		`${configDir}/plugins/brat/`,
+	];
 }
 
 export const DEFAULT_GITATTRIBUTES = [
