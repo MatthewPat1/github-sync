@@ -1,9 +1,16 @@
-import { promises as fs } from "fs";
+import { Buffer } from "node:buffer";
+import { FSWatcher, promises as fs, watch } from "fs";
 import path from "path";
 import { Notice, Plugin, TAbstractFile } from "obsidian";
 import { GitBinaryDetector } from "./git/GitBinaryDetector";
 import { GitService } from "./git/GitService";
-import { createDefaultSettings, ensureRequiredIgnorePatterns, GitHubSyncSettings } from "./settings";
+import {
+	createDefaultIgnorePatterns,
+	createDefaultSettings,
+	createDefaultWatchPluginReleaseFilesForAutoSync,
+	ensureRequiredIgnorePatterns,
+	GitHubSyncSettings,
+} from "./settings";
 import { SyncManager } from "./sync/SyncManager";
 import { ConnectionCheckResult, ConnectionTestModal } from "./ui/ConnectionTestModal";
 import { ConflictModal } from "./ui/ConflictModal";
@@ -25,9 +32,12 @@ export default class GitHubSyncPlugin extends Plugin {
 	statusBar: StatusBarController;
 	private autoSyncTimeoutId: number | null = null;
 	private startupPullTimeoutId: number | null = null;
+	private pluginWatcherRefreshTimeoutId: number | null = null;
 	private readonly pluginGeneratedWritePaths = new Set<string>();
 	private readonly pluginGeneratedWriteTimeouts = new Set<number>();
 	private readonly pendingAutoSyncPaths = new Set<string>();
+	private readonly pendingPluginReleaseScans = new Set<string>();
+	private readonly pluginReleaseFileWatchers = new Map<string, FSWatcher>();
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -75,7 +85,7 @@ export default class GitHubSyncPlugin extends Plugin {
 			id: "write-gitignore",
 			name: "Write .gitignore",
 			callback: () => {
-				void this.writeRootFile(".gitignore", this.settings.ignorePatterns);
+				void this.writeGitignore();
 			},
 		});
 
@@ -97,6 +107,7 @@ export default class GitHubSyncPlugin extends Plugin {
 
 		this.addSettingTab(new SettingsTab(this.app, this));
 		this.registerVaultFileEvents();
+		await this.setupPluginReleaseFileWatchers();
 
 		if (this.settings.startupPullEnabled) {
 			this.startupPullTimeoutId = window.setTimeout(() => {
@@ -109,6 +120,9 @@ export default class GitHubSyncPlugin extends Plugin {
 	onunload(): void {
 		this.clearAutoSyncTimer();
 		this.clearStartupPullTimer();
+		this.clearPluginWatcherRefreshTimer();
+		this.closePluginReleaseFileWatchers();
+		this.pendingPluginReleaseScans.clear();
 		for (const timeoutId of this.pluginGeneratedWriteTimeouts) {
 			window.clearTimeout(timeoutId);
 		}
@@ -124,6 +138,11 @@ export default class GitHubSyncPlugin extends Plugin {
 			...createDefaultSettings(this.app.vault.configDir),
 			...loadedSettings,
 		};
+		if (loadedSettings?.watchPluginReleaseFilesForAutoSync === undefined) {
+			this.settings.watchPluginReleaseFilesForAutoSync = createDefaultWatchPluginReleaseFilesForAutoSync(
+				this.settings.pluginTrackingMode,
+			);
+		}
 		this.settings.ignorePatterns = ensureRequiredIgnorePatterns(
 			this.settings.ignorePatterns,
 			this.app.vault.configDir,
@@ -137,6 +156,7 @@ export default class GitHubSyncPlugin extends Plugin {
 			this.clearAutoSyncTimer();
 			this.pendingAutoSyncPaths.clear();
 		}
+		await this.setupPluginReleaseFileWatchers();
 	}
 
 	private async runPullOnly(): Promise<void> {
@@ -337,6 +357,13 @@ export default class GitHubSyncPlugin extends Plugin {
 		}
 	}
 
+	async writeGitignore(): Promise<void> {
+		const content = this.getGitignoreContent();
+		this.settings.ignorePatterns = content;
+		await this.saveSettings();
+		await this.writeRootFile(".gitignore", content);
+	}
+
 	private async writeRootFileContent(
 		fileName: ".gitignore" | ".gitattributes",
 		filePath: string,
@@ -432,6 +459,120 @@ export default class GitHubSyncPlugin extends Plugin {
 		this.scheduleAutoSync([file.path, oldPath].filter(isDefined));
 	}
 
+	private async setupPluginReleaseFileWatchers(): Promise<void> {
+		this.closePluginReleaseFileWatchers();
+		if (!this.settings.autoSyncEnabled || !this.settings.watchPluginReleaseFilesForAutoSync) {
+			return;
+		}
+
+		const pluginRootPath = this.getPluginRootPath();
+		try {
+			const pluginRootStats = await fs.stat(pluginRootPath);
+			if (!pluginRootStats.isDirectory()) {
+				return;
+			}
+
+			this.watchPluginDirectory(pluginRootPath, (pluginDirectoryName) => {
+				this.schedulePluginReleaseWatcherRefresh(pluginDirectoryName);
+			});
+
+			const entries = await fs.readdir(pluginRootPath, { withFileTypes: true });
+			for (const entry of entries) {
+				if (!entry.isDirectory() || this.isIgnoredPluginDirectory(entry.name)) {
+					continue;
+				}
+
+				const pluginDirPath = path.join(pluginRootPath, entry.name);
+				this.watchPluginDirectory(pluginDirPath, (fileName) => {
+					this.handlePluginReleaseFileSystemEvent(entry.name, fileName);
+				});
+			}
+		} catch (error) {
+			if (!this.isNodeError(error) || error.code !== "ENOENT") {
+				new Notice("GitHub sync: failed to watch plugin release files.");
+			}
+		}
+	}
+
+	private watchPluginDirectory(directoryPath: string, onChange: (fileName: string | null) => void): void {
+		try {
+			const watcher = watch(directoryPath, (_eventType, fileName) => {
+				onChange(this.normalizeWatchedFileName(fileName));
+			});
+			watcher.on("error", () => {
+				watcher.close();
+				this.pluginReleaseFileWatchers.delete(directoryPath);
+			});
+			this.pluginReleaseFileWatchers.set(directoryPath, watcher);
+		} catch {
+			// Individual plugin folders can disappear while Obsidian is updating plugins.
+		}
+	}
+
+	private handlePluginReleaseFileSystemEvent(pluginDirectoryName: string, fileName: string | null): void {
+		if (!this.settings.autoSyncEnabled || !this.settings.watchPluginReleaseFilesForAutoSync || fileName === null) {
+			return;
+		}
+
+		if (fileName.includes("/") || fileName.includes(path.sep)) {
+			return;
+		}
+
+		const vaultPath = `${this.app.vault.configDir}/plugins/${pluginDirectoryName}/${fileName}`;
+		if (!this.isAutoSyncablePluginReleasePath(vaultPath)) {
+			return;
+		}
+
+		this.scheduleAutoSync([vaultPath]);
+	}
+
+	private schedulePluginReleaseWatcherRefresh(pluginDirectoryName: string | null): void {
+		if (pluginDirectoryName !== null && !this.isIgnoredPluginDirectory(pluginDirectoryName)) {
+			this.pendingPluginReleaseScans.add(pluginDirectoryName);
+		}
+
+		this.clearPluginWatcherRefreshTimer();
+		this.pluginWatcherRefreshTimeoutId = window.setTimeout(() => {
+			const pluginDirectoryNames = Array.from(this.pendingPluginReleaseScans);
+			this.pendingPluginReleaseScans.clear();
+			this.pluginWatcherRefreshTimeoutId = null;
+			void this.refreshPluginReleaseFileWatchers(pluginDirectoryNames);
+		}, 1000);
+	}
+
+	private async refreshPluginReleaseFileWatchers(pluginDirectoryNames: string[]): Promise<void> {
+		await this.setupPluginReleaseFileWatchers();
+		await this.scheduleExistingPluginReleaseFiles(pluginDirectoryNames);
+	}
+
+	private async scheduleExistingPluginReleaseFiles(pluginDirectoryNames: string[]): Promise<void> {
+		const changedPaths: string[] = [];
+		for (const pluginDirectoryName of pluginDirectoryNames) {
+			for (const fileName of this.getPluginReleaseFileNames()) {
+				const vaultPath = `${this.app.vault.configDir}/plugins/${pluginDirectoryName}/${fileName}`;
+				if (!this.isAutoSyncablePluginReleasePath(vaultPath)) {
+					continue;
+				}
+
+				const absolutePath = path.join(this.gitService.getVaultRootPath(), vaultPath);
+				if (await this.pathExists(absolutePath)) {
+					changedPaths.push(vaultPath);
+				}
+			}
+		}
+
+		if (changedPaths.length > 0) {
+			this.scheduleAutoSync(changedPaths);
+		}
+	}
+
+	private closePluginReleaseFileWatchers(): void {
+		for (const watcher of this.pluginReleaseFileWatchers.values()) {
+			watcher.close();
+		}
+		this.pluginReleaseFileWatchers.clear();
+	}
+
 	private scheduleAutoSync(changedPaths: string[]): void {
 		for (const changedPath of changedPaths) {
 			this.pendingAutoSyncPaths.add(changedPath);
@@ -469,6 +610,15 @@ export default class GitHubSyncPlugin extends Plugin {
 		this.startupPullTimeoutId = null;
 	}
 
+	private clearPluginWatcherRefreshTimer(): void {
+		if (this.pluginWatcherRefreshTimeoutId === null) {
+			return;
+		}
+
+		window.clearTimeout(this.pluginWatcherRefreshTimeoutId);
+		this.pluginWatcherRefreshTimeoutId = null;
+	}
+
 	private suppressGeneratedWriteEvent(filePath: string): void {
 		this.pluginGeneratedWritePaths.add(filePath);
 		const timeoutId = window.setTimeout(() => {
@@ -483,8 +633,63 @@ export default class GitHubSyncPlugin extends Plugin {
 	}
 
 	private isOwnPluginPath(filePath: string): boolean {
-		return filePath === `.obsidian/plugins/${this.manifest.id}` ||
-			filePath.startsWith(`.obsidian/plugins/${this.manifest.id}/`);
+		return filePath === `${this.app.vault.configDir}/plugins/${this.manifest.id}` ||
+			filePath.startsWith(`${this.app.vault.configDir}/plugins/${this.manifest.id}/`);
+	}
+
+	private isAutoSyncablePluginReleasePath(filePath: string): boolean {
+		if (this.isIgnoredManagerPluginPath(filePath) || this.isOwnPluginPath(filePath)) {
+			return false;
+		}
+
+		const pluginPrefix = `${this.app.vault.configDir}/plugins/`;
+		if (!filePath.startsWith(pluginPrefix)) {
+			return false;
+		}
+
+		const relativePluginPath = filePath.slice(pluginPrefix.length);
+		const parts = relativePluginPath.split("/");
+		if (parts.length !== 2) {
+			return false;
+		}
+
+		const fileName = parts[1];
+		if (fileName === undefined) {
+			return false;
+		}
+
+		return this.getPluginReleaseFileNames().includes(fileName);
+	}
+
+	private isIgnoredManagerPluginPath(filePath: string): boolean {
+		return this.getIgnoredManagerPluginIds().some((pluginId) =>
+			filePath === `${this.app.vault.configDir}/plugins/${pluginId}` ||
+			filePath.startsWith(`${this.app.vault.configDir}/plugins/${pluginId}/`),
+		);
+	}
+
+	private isIgnoredPluginDirectory(pluginDirectoryName: string): boolean {
+		return this.getIgnoredManagerPluginIds().includes(pluginDirectoryName);
+	}
+
+	private getIgnoredManagerPluginIds(): string[] {
+		return ["github-sync", "obsidian42-brat", "brat"];
+	}
+
+	private getPluginReleaseFileNames(): string[] {
+		return ["manifest.json", "main.js", "styles.css"];
+	}
+
+	private getPluginRootPath(): string {
+		return path.join(this.gitService.getVaultRootPath(), this.app.vault.configDir, "plugins");
+	}
+
+	private getGitignoreContent(): string {
+		if (this.settings.pluginTrackingMode === "custom") {
+			return this.settings.ignorePatterns;
+		}
+
+		return createDefaultIgnorePatterns(this.app.vault.configDir, this.settings.pluginTrackingMode);
 	}
 
 	private async testLocalUserConfig(): Promise<ConnectionCheckResult[]> {
@@ -561,7 +766,7 @@ export default class GitHubSyncPlugin extends Plugin {
 			`git branch -M ${branchName}`,
 			"",
 			"cat > .gitignore <<'EOF'",
-			this.settings.ignorePatterns,
+			this.getGitignoreContent(),
 			"EOF",
 			"",
 			"cat > .gitattributes <<'EOF'",
@@ -579,6 +784,27 @@ export default class GitHubSyncPlugin extends Plugin {
 
 	private isNodeError(error: unknown): error is Error & { code?: string } {
 		return error instanceof Error;
+	}
+
+	private async pathExists(filePath: string): Promise<boolean> {
+		try {
+			await fs.access(filePath);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	private normalizeWatchedFileName(fileName: string | Buffer | null): string | null {
+		if (typeof fileName === "string") {
+			return fileName;
+		}
+
+		if (Buffer.isBuffer(fileName)) {
+			return fileName.toString("utf8");
+		}
+
+		return null;
 	}
 }
 

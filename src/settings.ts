@@ -1,7 +1,11 @@
+export type PluginTrackingMode = "ignore-all" | "release-files-only" | "custom";
+
 export interface GitHubSyncSettings {
 	remoteName: string;
 	branchName: string;
 	autoSyncEnabled: boolean;
+	pluginTrackingMode: PluginTrackingMode;
+	watchPluginReleaseFilesForAutoSync: boolean;
 	idleTimeoutSeconds: number;
 	startupPullEnabled: boolean;
 	startupPullDelaySeconds: number;
@@ -14,19 +18,25 @@ export interface GitHubSyncSettings {
 	gitattributes: string;
 }
 
-export function createDefaultIgnorePatterns(configDir: string): string {
+export function createDefaultIgnorePatterns(configDir: string, pluginTrackingMode: PluginTrackingMode): string {
 	return [
 		".DS_Store",
 		"Thumbs.db",
 		"desktop.ini",
 		".trash/",
 		"",
-		...createRequiredIgnorePatterns(configDir),
+		...createWorkspaceIgnorePatterns(configDir),
+		"",
+		...createPluginIgnorePatterns(configDir, pluginTrackingMode),
 	].join("\n");
 }
 
+export function createDefaultWatchPluginReleaseFilesForAutoSync(pluginTrackingMode: PluginTrackingMode): boolean {
+	return pluginTrackingMode === "release-files-only";
+}
+
 export function ensureRequiredIgnorePatterns(ignorePatterns: string, configDir: string): string {
-	const requiredPatterns = createRequiredIgnorePatterns(configDir);
+	const requiredPatterns = createWorkspaceIgnorePatterns(configDir);
 	const existingLines = new Set(ignorePatterns.split(/\r?\n/).map((line) => line.trim()));
 	const missingPatterns = requiredPatterns.filter((line) => line.length > 0 && !line.startsWith("#") && !existingLines.has(line));
 	if (missingPatterns.length === 0) {
@@ -37,26 +47,42 @@ export function ensureRequiredIgnorePatterns(ignorePatterns: string, configDir: 
 	return `${ignorePatterns.trimEnd()}${separator}${requiredPatterns.join("\n")}`;
 }
 
-function createRequiredIgnorePatterns(configDir: string): string[] {
+function createWorkspaceIgnorePatterns(configDir: string): string[] {
 	return [
 		"# Obsidian workspace and cache noise",
 		`${configDir}/workspace.json`,
 		`${configDir}/workspace-mobile.json`,
 		`${configDir}/cache/`,
-		"",
-		"# Ignore all plugin internals by default",
-		`${configDir}/plugins/**`,
-		"",
-		"# But allow plugin folders and install files",
-		`!${configDir}/plugins/`,
-		`!${configDir}/plugins/*/`,
-		`!${configDir}/plugins/*/manifest.json`,
-		`!${configDir}/plugins/*/main.js`,
-		`!${configDir}/plugins/*/styles.css`,
-		"# Keep these managed outside the vault repo",
-		`${configDir}/plugins/github-sync/`,
-		`${configDir}/plugins/obsidian42-brat/`,
-		`${configDir}/plugins/brat/`,
+	];
+}
+
+function createPluginIgnorePatterns(configDir: string, pluginTrackingMode: PluginTrackingMode): string[] {
+	if (pluginTrackingMode === "release-files-only") {
+		return [
+			"# Track only plugin release files",
+			`${configDir}/plugins/**`,
+			`!${configDir}/plugins/`,
+			`!${configDir}/plugins/*/`,
+			`!${configDir}/plugins/*/manifest.json`,
+			`!${configDir}/plugins/*/main.js`,
+			`!${configDir}/plugins/*/styles.css`,
+			"# Keep manager and sync plugins outside the vault repo",
+			`${configDir}/plugins/github-sync/`,
+			`${configDir}/plugins/obsidian42-brat/`,
+			`${configDir}/plugins/brat/`,
+		];
+	}
+
+	if (pluginTrackingMode === "custom") {
+		return [
+			"# Plugin tracking is custom. Edit plugin ignore rules manually.",
+			`${configDir}/plugins/`,
+		];
+	}
+
+	return [
+		"# Ignore all plugins by default",
+		`${configDir}/plugins/`,
 	];
 }
 
@@ -76,10 +102,13 @@ export const DEFAULT_GITATTRIBUTES = [
 ].join("\n");
 
 export function createDefaultSettings(configDir: string): GitHubSyncSettings {
+	const pluginTrackingMode: PluginTrackingMode = "ignore-all";
 	return {
 		remoteName: "origin",
 		branchName: "main",
 		autoSyncEnabled: true,
+		pluginTrackingMode,
+		watchPluginReleaseFilesForAutoSync: createDefaultWatchPluginReleaseFilesForAutoSync(pluginTrackingMode),
 		idleTimeoutSeconds: 10,
 		startupPullEnabled: true,
 		startupPullDelaySeconds: 5,
@@ -88,7 +117,7 @@ export function createDefaultSettings(configDir: string): GitHubSyncSettings {
 		commitMessageTemplate: "vault sync: {{timestamp}} [{{device}}]",
 		gitUserName: "",
 		gitUserEmail: "",
-		ignorePatterns: createDefaultIgnorePatterns(configDir),
+		ignorePatterns: createDefaultIgnorePatterns(configDir, pluginTrackingMode),
 		gitattributes: DEFAULT_GITATTRIBUTES,
 	};
 }

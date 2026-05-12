@@ -1,6 +1,11 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type GitHubSyncPlugin from "../main";
 import type { SetupChecklistItem } from "../main";
+import {
+	createDefaultIgnorePatterns,
+	createDefaultWatchPluginReleaseFilesForAutoSync,
+	PluginTrackingMode,
+} from "../settings";
 
 export class SettingsTab extends PluginSettingTab {
 	private setupResults: SetupChecklistItem[] | null = null;
@@ -17,6 +22,7 @@ export class SettingsTab extends PluginSettingTab {
 		this.addSetupChecklistSection(containerEl);
 		this.addRepositorySection(containerEl);
 		this.addAutoSyncSection(containerEl);
+		this.addPluginTrackingSection(containerEl);
 		this.addCommitsSection(containerEl);
 		this.addIgnorePatternsSection(containerEl);
 		this.addAdvancedSection(containerEl);
@@ -44,7 +50,7 @@ export class SettingsTab extends PluginSettingTab {
 				button
 					.setButtonText("Write .gitignore")
 					.onClick(() => {
-						void this.plugin.writeRootFile(".gitignore", this.plugin.settings.ignorePatterns);
+						void this.plugin.writeGitignore();
 					}),
 			)
 			.addButton((button) =>
@@ -212,6 +218,51 @@ export class SettingsTab extends PluginSettingTab {
 			);
 	}
 
+	private addPluginTrackingSection(containerEl: HTMLElement): void {
+		new Setting(containerEl).setName("Plugin tracking").setHeading();
+		containerEl.createEl("p", {
+			text: "Ignoring plugins is safest; tracking release files lets Git sync installed plugin code, but plugin updates may create commits, and brat plus GitHub sync should usually remain managed outside the vault repo.",
+			cls: "setting-item-description",
+		});
+
+		new Setting(containerEl)
+			.setName("Plugin tracking mode")
+			.setDesc("Choose how generated .gitignore rules treat Obsidian community plugins.")
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption("ignore-all", "Ignore all plugins")
+					.addOption("release-files-only", "Track release files only")
+					.addOption("custom", "Custom")
+					.setValue(this.plugin.settings.pluginTrackingMode)
+					.onChange(async (value) => {
+						const mode = value as PluginTrackingMode;
+						this.plugin.settings.pluginTrackingMode = mode;
+						this.plugin.settings.watchPluginReleaseFilesForAutoSync = createDefaultWatchPluginReleaseFilesForAutoSync(mode);
+						if (mode !== "custom") {
+							this.plugin.settings.ignorePatterns = createDefaultIgnorePatterns(this.app.vault.configDir, mode);
+						}
+						await this.plugin.saveSettings();
+						this.display();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Watch plugin release files")
+			.setDesc("Trigger auto-sync when manifest.json, main.js, or styles.css changes in tracked plugin folders.")
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.watchPluginReleaseFilesForAutoSync).onChange(async (value) => {
+					this.plugin.settings.watchPluginReleaseFilesForAutoSync = value;
+					await this.plugin.saveSettings();
+				}),
+			);
+
+		if (this.plugin.settings.pluginTrackingMode === "release-files-only") {
+			new Setting(containerEl)
+				.setName("Plugin update warning")
+				.setDesc("Plugin updates may create Git commits; GitHub sync, brat, plugin data.json files, source trees, build outputs, and dependency folders remain ignored by the generated rules.");
+		}
+	}
+
 	private addIgnorePatternsSection(containerEl: HTMLElement): void {
 		new Setting(containerEl).setName("Ignore patterns").setHeading();
 
@@ -223,6 +274,7 @@ export class SettingsTab extends PluginSettingTab {
 				text.inputEl.cols = 40;
 				text.setValue(this.plugin.settings.ignorePatterns).onChange(async (value) => {
 					this.plugin.settings.ignorePatterns = value;
+					this.plugin.settings.pluginTrackingMode = "custom";
 					await this.plugin.saveSettings();
 				});
 			});
@@ -234,7 +286,7 @@ export class SettingsTab extends PluginSettingTab {
 				button
 					.setButtonText("Write .gitignore")
 					.onClick(() => {
-						void this.plugin.writeRootFile(".gitignore", this.plugin.settings.ignorePatterns);
+						void this.plugin.writeGitignore();
 					}),
 			);
 	}
