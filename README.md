@@ -217,27 +217,39 @@ git branch -r
 
 If your repository uses `master` or another branch name instead of `main`, update the plugin `branchName` setting to match, or rename your branch intentionally in Git.
 
-## Release flow
+## Release workflow
 
-GitHub Actions can create an installable release when you push a version tag such as `1.0.0`.
+GitHub Actions creates the installable GitHub release after a version tag is pushed. The local release preparation script only updates version files, runs checks, commits the version bump, pushes `main`, creates the tag, and pushes the tag.
 
-1. Update `manifest.json` so `version` is the release version.
-2. Update `package.json` to the same version if applicable.
-3. Commit and push the version changes.
-4. Create a tag that exactly matches `manifest.json` version.
-5. Push the tag.
-
-Example:
+Run the release helper from a clean `main` working tree:
 
 ```bash
-git add manifest.json package.json package-lock.json versions.json
-git commit -m "Release 1.0.0"
-git push
-git tag 1.0.0
-git push origin 1.0.0
+npm run release:prepare -- patch
+npm run release:prepare -- minor
+npm run release:prepare -- major
 ```
 
-The release workflow runs `npm ci`, `npm run lint`, `npm run build`, and `npm run package`. It verifies the pushed tag matches `manifest.json` version, then creates a GitHub release with:
+Version bumps follow semver:
+
+- `patch`: `X.Y.Z` to `X.Y.(Z+1)`
+- `minor`: `X.Y.Z` to `X.(Y+1).0`
+- `major`: `X.Y.Z` to `(X+1).0.0`
+
+To release a specific version, pass the exact `X.Y.Z` version:
+
+```bash
+npm run release:prepare -- 1.2.3
+```
+
+To preview the safety checks and planned actions without changing files, committing, or pushing:
+
+```bash
+npm run release:prepare -- patch --dry-run
+```
+
+The release tag must exactly match `manifest.json` version. The script verifies that `package.json` matches `manifest.json`, updates `package-lock.json` with `npm install --package-lock-only`, updates `versions.json`, runs `npm run lint`, `npm run build`, and `npm run package`, then verifies the package output before pushing.
+
+GitHub Actions verifies the pushed tag matches `manifest.json` version, then creates a GitHub release with:
 
 - `manifest.json`
 - `main.js`
