@@ -1,4 +1,4 @@
-import { GitCommandResult, GitErrorCategory, GitRepositoryState } from "../git/GitTypes";
+import { GitCommandResult, GitErrorCategory, GitRepositoryState, GitStringArrayResult } from "../git/GitTypes";
 import { GitService } from "../git/GitService";
 import { GitHubSyncSettings } from "../settings";
 import { getDeviceName } from "../utils/deviceName";
@@ -217,7 +217,7 @@ export class SyncManager {
 		}
 
 		const stageResult = trigger === "auto"
-			? await this.options.gitService.stagePaths(changedPaths)
+			? await this.stageAutoSyncPaths(changedPaths)
 			: await this.options.gitService.stageAll();
 		if (stageResult.exitCode !== 0) {
 			return this.errorResult("Failed to stage local changes.", stageResult, trigger);
@@ -288,6 +288,57 @@ export class SyncManager {
 		}
 
 		return this.options.gitService.setLocalUserConfig(name, email);
+	}
+
+	private async stageAutoSyncPaths(changedPaths: string[]): Promise<GitCommandResult> {
+		const stageablePathsResult = await this.getStageableAutoSyncPaths(changedPaths);
+		if (stageablePathsResult.exitCode !== 0) {
+			return stageablePathsResult;
+		}
+
+		return this.options.gitService.stagePaths(stageablePathsResult.values);
+	}
+
+	private async getStageableAutoSyncPaths(changedPaths: string[]): Promise<GitStringArrayResult> {
+		const uniquePaths = Array.from(new Set(changedPaths.filter((filePath) => filePath.length > 0)));
+		const stageablePaths: string[] = [];
+
+		for (const filePath of uniquePaths) {
+			const tracked = await this.options.gitService.isPathTracked(filePath);
+			if (tracked.exitCode !== 0 && tracked.exitCode !== 1) {
+				return {
+					...tracked,
+					values: [],
+				};
+			}
+
+			if (tracked.value) {
+				stageablePaths.push(filePath);
+				continue;
+			}
+
+			if (!(await this.options.gitService.pathExistsInWorkTree(filePath))) {
+				continue;
+			}
+
+			const ignored = await this.options.gitService.isPathIgnored(filePath);
+			if (ignored.exitCode !== 0 && ignored.exitCode !== 1) {
+				return {
+					...ignored,
+					values: [],
+				};
+			}
+
+			if (!ignored.value) {
+				stageablePaths.push(filePath);
+			}
+		}
+
+		return {
+			...SUCCESS_RESULT,
+			commandLabel: "auto-sync stage path filter",
+			values: stageablePaths,
+		};
 	}
 
 	private async handlePullOnlyResult(result: GitCommandResult): Promise<SyncResult> {

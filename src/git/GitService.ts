@@ -112,6 +112,36 @@ export class GitService {
 		};
 	}
 
+	async pathExistsInWorkTree(filePath: string): Promise<boolean> {
+		return this.pathExists(path.join(this.getVaultPath(), filePath));
+	}
+
+	async isPathTracked(filePath: string): Promise<GitBooleanResult> {
+		const result = await this.runGit({
+			args: ["ls-files", "--error-unmatch", "--", filePath],
+			commandLabel: "git ls-files --error-unmatch -- <path>",
+			timeoutMs: 10000,
+		});
+
+		return {
+			...result,
+			value: result.exitCode === 0,
+		};
+	}
+
+	async isPathIgnored(filePath: string): Promise<GitBooleanResult> {
+		const result = await this.runGit({
+			args: ["check-ignore", "-q", "--", filePath],
+			commandLabel: "git check-ignore -q -- <path>",
+			timeoutMs: 10000,
+		});
+
+		return {
+			...result,
+			value: result.exitCode === 0,
+		};
+	}
+
 	async fetch(remote: string): Promise<GitCommandResult> {
 		return this.runGit({
 			args: ["fetch", "--prune", remote],
